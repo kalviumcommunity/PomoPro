@@ -4,15 +4,16 @@
 
 **App Name:** PomoPro
 
-**Purpose:** A productivity app that uses the Pomodoro technique to help users manage time, track tasks, and analyze productivity.
+**Purpose:** A productivity app that uses the Pomodoro technique to help users manage time, track tasks, analyze productivity, and collaborate with peers or within organizations.
 
 **Tech Stack:**
 
 * **Frontend:** React Native
 * **Backend:** Node.js + Express
 * **Database:** MongoDB (Mongoose ODM)
+* **Real-time Communication:** WebSockets (Socket.IO)
 
-**Scope:** Covers Task Management, Pomodoro Timer, User Authentication, and Productivity Analytics.
+**Scope:** Covers Task Management, Pomodoro Timer, User Authentication, Productivity Analytics, and Collaboration (Teams, Shared Sessions, Pair Focus Mode).
 
 ---
 
@@ -79,6 +80,53 @@
 
 ---
 
+### 2.5 Collaboration 
+
+#### 2.5.1 Team Management
+
+**Description:** Create or join an organization/team.
+
+* **Inputs:** Team name, invite code
+* **Outputs:** Organization details, member list
+
+**Flow:**
+
+1. User creates/join team via invite code
+2. Members can see shared tasks and sessions
+
+---
+
+#### 2.5.2 Shared Pomodoro Sessions
+
+**Description:** Multiple users run the same Pomodoro timer together.
+
+* **Inputs:** Session type (focus/break), duration, participants
+* **Outputs:** Synced timer across devices, session logs
+
+**Flow:**
+
+1. User starts shared session
+2. Timer synced via WebSocket
+3. Session logged in DB for all participants
+
+---
+
+#### 2.5.3 Pair Focus Mode (Inspired by Pair Programming)
+
+**Description:** Two users pair up for a shared, synced Pomodoro session.
+
+* **Inputs:** Tasks chosen by both users
+* **Outputs:** Real-time synced progress, chat/notes option
+
+**Flow:**
+
+1. User A invites User B to pair session
+2. Both confirm and start timer
+3. Progress updates shared in real-time
+4. End-of-session stats shown for both
+
+---
+
 ## 3. Detailed Component Design
 
 ### 3.1 Screens & Components
@@ -93,22 +141,24 @@ App
  │     ├── TaskListScreen
  │     ├── TaskDetailScreen
  │     ├── TimerScreen
- │     └── AnalyticsScreen
+ │     ├── AnalyticsScreen
+ │     └── CollaborationStack
+ │           ├── TeamDashboardScreen
+ │           ├── SharedSessionScreen
+ │           └── PairFocusScreen
 ```
 
-**Example: TimerScreen**
+**Example: SharedSessionScreen**
 
-* **State:** `timeLeft`, `isRunning`, `sessionType (focus/break)`
-* **Methods:** `startTimer()`, `pauseTimer()`, `resetTimer()`, `switchSession()`
-* **Navigation:** Back → HomeScreen
+* **State:** `timeLeft`, `isRunning`, `participants`, `sessionType`, `chatMessages`
+* **Methods:** `startSession()`, `syncTime()`, `sendMessage()`, `endSession()`
+* **Navigation:** Back → TeamDashboard
 
 ---
 
 ## 4. Database Design (MongoDB)
 
-### Collections
-
-**Users**
+### Users
 
 ```json
 {
@@ -120,7 +170,7 @@ App
 }
 ```
 
-**Tasks**
+### Tasks
 
 ```json
 {
@@ -134,7 +184,7 @@ App
 }
 ```
 
-**Sessions**
+### Sessions
 
 ```json
 {
@@ -147,96 +197,101 @@ App
 }
 ```
 
+### Organizations (New)
+
+```json
+{
+  "_id": "ObjectId",
+  "name": "string",
+  "code": "string",
+  "members": ["ObjectId (userId)"],
+  "createdAt": "Date"
+}
+```
+
+### SharedSessions (New)
+
+```json
+{
+  "_id": "ObjectId",
+  "organizationId": "ObjectId",
+  "sessionType": "focus | break",
+  "duration": "number",
+  "startedBy": "ObjectId",
+  "participants": [
+    { "userId": "ObjectId", "taskId": "ObjectId" }
+  ],
+  "startedAt": "Date",
+  "endedAt": "Date"
+}
+```
+
 ---
 
 ## 5. API Contracts
 
-### POST `/auth/signup`
+### Auth
 
-**Request**
+* **POST** `/auth/signup`
+* **POST** `/auth/login`
+
+### Tasks
+
+* **GET** `/tasks/:userId`
+* **POST** `/tasks/create`
+
+### Sessions
+
+* **POST** `/sessions/log`
+
+### Collaboration (New)
+
+**POST `/org/create`**
+*Request*
+
+```json
+{ "name": "Study Group A", "userId": "123" }
+```
+
+*Response*
+
+```json
+{ "orgId": "456", "code": "XYZ123" }
+```
+
+**POST `/org/join`**
+*Request*
+
+```json
+{ "userId": "123", "code": "XYZ123" }
+```
+
+**POST `/session/shared/start`**
+*Request*
 
 ```json
 {
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "mypassword"
-}
-```
-
-**Response**
-
-```json
-{
-  "message": "Signup successful",
-  "token": "jwt_token_here"
-}
-```
-
----
-
-### POST `/auth/login`
-
-**Request**
-
-```json
-{
-  "email": "john@example.com",
-  "password": "mypassword"
-}
-```
-
-**Response**
-
-```json
-{
-  "message": "Login successful",
-  "token": "jwt_token_here",
-  "userId": "ObjectId"
-}
-```
-
----
-
-### GET `/tasks/:userId`
-
-**Response**
-
-```json
-[
-  {
-    "_id": "123",
-    "title": "Finish project",
-    "status": "pending",
-    "deadline": "2025-08-20"
-  }
-]
-```
-
----
-
-### POST `/sessions/log`
-
-**Request**
-
-```json
-{
-  "userId": "123",
-  "taskId": "456",
-  "type": "focus",
-  "duration": 25
+  "orgId": "456",
+  "sessionType": "focus",
+  "duration": 25,
+  "participants": [
+    { "userId": "123", "taskId": "789" },
+    { "userId": "124", "taskId": "790" }
+  ]
 }
 ```
 
 ---
 
-## 6. Sequence Diagram (Example: Start Timer)
+## 6. Sequence Diagram (Shared Session Example)
 
 ```
-User → TimerScreen: Start Timer
-TimerScreen → Local State: Start countdown
-TimerScreen → Backend: Log session start
-Backend → DB (Sessions): Insert new session
-TimerScreen → User: Show countdown
+User A → TeamDashboard: Start Shared Session
+TeamDashboard → Backend: Create SharedSession
+Backend → DB: Insert shared session
+Backend → All Participants (via WebSocket): Notify session start
+All Users → SharedSessionScreen: Show synced timer
+At end → Backend logs completion → Updates analytics
 ```
 
 ---
@@ -247,16 +302,21 @@ TimerScreen → User: Show countdown
 * Timer paused → Preserve state in AsyncStorage
 * API failure → Use local cache and sync later
 * Task without deadline → Default null deadline
+* Shared session user drops → Continue for remaining users
+* Invalid org code → Show error message
 
 ---
 
 ## 8. Non-Functional Requirements
 
-**Performance:** Timer runs locally without needing backend calls
+**Performance:** Timer runs locally; sync only for shared sessions.
 
 **Security:**
 
 * Passwords hashed with bcrypt
 * JWT tokens stored securely in AsyncStorage
+* Org codes unique and expirable
 
-**Scalability:** MongoDB allows flexible schema for tasks/sessions
+**Scalability:** MongoDB collections allow growth of tasks, sessions, orgs.
+
+**Real-time:** Shared sessions & pair focus use WebSocket for live sync.
